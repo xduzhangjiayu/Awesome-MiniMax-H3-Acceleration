@@ -57,12 +57,13 @@ H3 processes multimodal inputs in a shared token sequence and jointly denoises v
 | Research direction | Optimization target | Representative work |
 | :--- | :--- | :--- |
 | [Few-step generation & distillation](#distillation) | Denoiser evaluation count and learned sampling trajectories | LightX2V Turbo, FastH3, PDD, HyperFlow, DMAD, LynnReal-Omni |
-| [Efficient attention & architecture](#attention) | Attention computation and model structure | Sol-Attn, Turbo-SLA, Veda, VDN-H3, MC-Sparse, VC-Attention |
-| [Caching & feature prediction](#caching) | Feature reuse and prediction across denoising steps | Spectrum, FirstBlockCache, MotionCache, TE-Speed, AdaTaylorCache |
+| [Efficient attention & architecture](#attention) | Attention computation and model structure | Sol-Attn, Turbo-SLA, FastH3, Veda, VDN-H3, MC-Sparse, VC-Attention |
+| [Caching & feature prediction](#caching) | Feature reuse and prediction across denoising steps | Spectrum, FirstBlockCache, T8 Block Cache, MiniMaxH3-Cache, MotionCache, TE-Speed, AdaTaylorCache |
 | [Quantization & compression](#compression) | Weight/activation precision, modulation parameters, memory traffic | ConvRot, NF4, GGUF, OrbitQuant, SVDQuant, AdaLN precomputation |
-| [Kernels, runtimes & distributed inference](#systems) | Execution efficiency, communication, and component placement/offloading | SGLang, vLLM-Omni, LightX2V, H3-specific runtimes |
-| [VAE & decoder acceleration](#vae) | VAE decode cost and reconstruction quality versus decoding speed | Light VAE, H3-TAE, MotionCache Fast VAE Decode |
+| [Kernels, runtimes, memory & distributed inference](#systems) | Execution efficiency, communication, peak memory, and component placement/offloading | SGLang, vLLM-Omni, LightX2V, MiniMax H3 Parallel, LongMedia |
+| [VAE & decoder acceleration](#vae) | VAE encoding/decoding cost and reconstruction quality versus speed | Light VAE, H3-TAE, MotionCache Fast VAE Decode, H3VAE_TRT |
 | [Autoregressive diffusion acceleration](#ar-diffusion) | Chunked autoregressive generation and cross-chunk memory reuse for streaming | TaoMate-H3 |
+| [Sampling, solvers & resolution scheduling](#sampling) | Numerical solvers, sampling schedules, and spatial resolution during denoising | RefDelta-Solver, H3 SPEED |
 
 Entries are organized by technical contribution. A project may appear in multiple categories when it contributes more than one acceleration mechanism; ports and quantized exports retain their upstream attribution.
 
@@ -94,6 +95,7 @@ These works reduce attention computation or change its structure. Training-free 
 | :--- | :--- | :--- | :--- |
 | **Sol Engine / Sol-Attn** | Training-free sparse attention integrated into Sol Engine. | H3 deployment reports cover attention, runtime, and pipeline optimizations; end-to-end speedups should not be attributed to attention alone. | [H3 system report](https://nvlabs.github.io/Sana/Sol-Engine/H3-DataCenter/) · [Triton port](https://github.com/kijai/ComfyUI-SolAttn_triton) · [CuTe DSL port](https://github.com/quzopl/ComfyUI-SolAttn-H3) |
 | **LightX2V Turbo-SLA** | Joint few-step distillation and Sparse–Linear Attention adaptation. | A dedicated sparse FL2V adapter, not merely a generic attention switch applied to any Turbo checkpoint. | [H3 weights / recipe](https://huggingface.co/lightx2v/Minimax-h3-Turbo-SLA) · [SLA](https://github.com/thu-ml/SLA) |
+| **FastH3 / FastVideo** | Video sparse attention combined with data-free distillation. | The cited 8-Step V2 checkpoint targets T2VA and requires VSA-H3; the sparse-attention and distillation components are coupled in this release. | [Code](https://github.com/hao-ai-lab/FastVideo) · [8-Step V2](https://huggingface.co/FastVideo/FastVideo-FastH3-8-Step-V2) |
 | **Veda / Miowtion** | Learned block selection for video sparse attention, with predictor training and LoRA quality recovery. | H3 implementation supports FL2VA and Ref2VA paths; released predictor scope must be checked separately. | [Code](https://github.com/veda-sparse/Miowtion) · [T2VA preview](https://huggingface.co/Veda-Sparse/Minimax-H3-T2VA-Veda-8NFE-600Step-Preview) |
 | **Video DeltaNet / VDN-H3** | Video-native hybrid attention, retaining Softmax for interactions involving text or audio. | Architectural adaptation combined with few-step distillation and a serving stack with additional runtime optimizations. | [Paper](https://arxiv.org/abs/2609.20744) · [Project / resources](https://openvdn.github.io/) |
 | **LynnReal-Omni-Flash architecture** | A smaller, 42-block transformer with spatial token selection. | Structural and token-level computation reduction in the Flash variant. | [Paper](https://arxiv.org/abs/2609.15863) · [Code](https://github.com/LynnReal-AI/LynnReal-Omni) |
@@ -113,6 +115,8 @@ Training-free caching and feature prediction reduce denoiser computation by reus
 | :--- | :--- | :--- | :--- |
 | **Spectrum H3** | Spectral prediction of post-transformer hidden features. | H3-specific implementation with audio-aware replay handling; approximate execution. | [Code](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) |
 | **FirstBlockCache H3** | First-block residual change determines reuse of later computation. | Dedicated ComfyUI node for H3. | [Code](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) |
+| **MiniMax H3 Block Cache T8** | F1B0 caching: evaluate Block 0, then reuse residuals from Blocks 1–49 when both target audio and video changes remain below thresholds. | Experimental first-block-cache implementation with separate audio/video checks; incompatible with Spectrum and native Block Sparse Attention. | [Code](https://github.com/T8mars/comfyui-minimax-h3-blockcache-T8) |
+| **MiniMaxH3-Cache** | H3-specific caching with EasyCache-style usage. | Patches ComfyUI core files; compatibility depends on the installed ComfyUI version. | [Code](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) |
 | **TE-Speed** | Block-cache acceleration. | The original release and OSS reimplementation are separate distributions with different version and compatibility requirements. | [Original](https://github.com/tl2012tl/TE-Speed-MiniMaxH3) · [OSS implementation](https://github.com/HELPMEEADICE/TE-Speed-MiniMaxH3-OSS) |
 | **MotionCache** | Reuse of joint video/audio residuals based on motion-weighted change. | Also includes an experimental batched video VAE decoder. | [Code](https://github.com/starsFriday/ComfyUI-MiniMax-H3-MotionCache) |
 | **TeaCache H3** | Threshold-based selection between cache reuse and recomputation. | H3-specific node; evaluation coverage has not been verified for this index. | [Code](https://github.com/Icyoung/ComfyUI-MiniMaxH3-TeaCache) |
@@ -136,9 +140,9 @@ This category includes both arithmetic optimization and memory-oriented represen
 | **LynnReal-Omni Lite precomputation** | Schedule-specific time-modulation tables reduce the checkpoint footprint. | Standard Lite and Flash Lite preserve their corresponding variants' tested outputs at the shipped schedules. | [Documentation](https://github.com/LynnReal-AI/LynnReal-Omni/blob/main/comfyui/README.md) |
 
 <a id="systems"></a>
-### 3.5 Kernels, Runtimes & Distributed Inference
+### 3.5 Kernels, Runtimes, Memory & Distributed Inference
 
-System entries identify H3-specific execution work. Their performance depends on the selected model, attention backend, precision, parallel layout, and component placement or offloading policy.
+System entries identify H3-specific execution work. Their performance depends on the selected model, attention backend, precision, parallel layout, and component placement or offloading policy. Memory-oriented implementations can enable longer sequences without necessarily reducing latency at a fixed workload.
 
 | System | H3-specific contribution | Source |
 | :--- | :--- | :--- |
@@ -149,17 +153,21 @@ System entries identify H3-specific execution work. Their performance depends on
 | **MiniMax-H3 MLX / PipeNetwork** | MLX port with AdaLN precomputation and quantized checkpoints. | [Code](https://github.com/PipeNetwork/minimax-h3-mlx) |
 | **MiniMax-H3 Swift** | Swift/MLX implementation and documented investigations of caching and kernel tradeoffs. | [Code](https://github.com/loading-awesome/MiniMax-H3-Swift) · [Engineering notes](https://github.com/loading-awesome/MiniMax-H3-Swift/blob/main/docs/PERFORMANCE_GUIDE.md) |
 | **H3 ComfyUI Acceleration Pack / AMD ROCm** | Integration and reproducible comparison tooling for Turbo, Spectrum, and FirstBlockCache on ROCm. | [Code](https://github.com/JH427/minimax-h3-comfyui-acceleration) |
+| **MiniMax H3 Parallel** | Ref2VA attention-head sharding across two to four peer-accessible NVIDIA GPUs using Comfy Kitchen INT8 attention. Helper GPUs process Q/K/V head slices without sharding model weights. | [Code](https://github.com/AesSedai/ComfyUI-MiniMaxH3-Parallel) |
+| **MiniMax H3 LongMedia** | Long-form audio-video inference with streamed Sol attention, compressed KV, chunked MLP/output computation, and adaptive VRAM guards. Primarily extends long-sequence inference under memory constraints. | [Code](https://github.com/vizart-vj/ComfyUI-MiniMax-H3-LongMedia) |
+| **MiniMax H3 Sampler Unlimited** | Sequential chunked sampling with completed audio/video tails reused as continuation references. Reduces temporal memory requirements; a full-resolution sampling step must still fit in VRAM. | [Code](https://github.com/hradec/ComfyUI-MiniMax-H3-Sampler-Unlimited) |
 
 <a id="vae"></a>
 ### 3.6 VAE & Decoder Acceleration
 
-These methods reduce VAE decoding cost or trade reconstruction quality for decoding speed; they do not reduce H3 denoiser cost.
+These methods optimize VAE encoding and decoding, including lightweight approximate decoders and compiled execution. VAE acceleration does not reduce H3 denoiser computation.
 
 | Work | Technical contribution | Scope / notes | Resources |
 | :--- | :--- | :--- | :--- |
 | **LynnReal Light VAE** | Lightweight video decoder used in the Flash pipeline. | Decoder optimization for H3-derived audio-video generation. | [Code](https://github.com/LynnReal-AI/LynnReal-Omni) · [Weights](https://huggingface.co/stdstu123/LynnReal-Onmi-light-vae) |
 | **H3-TAE** | Lightweight approximate decoding. | Evaluate reconstruction and temporal fidelity separately from denoiser behavior. | [Weights](https://huggingface.co/Kijai/MiniMax-H3-TAE) |
 | **MotionCache Fast VAE Decode** | Experimental batched decoding in an H3-specific workflow. | Batched VAE decoding; separate from MotionCache's denoiser cache. | [Code](https://github.com/starsFriday/ComfyUI-MiniMax-H3-MotionCache) |
+| **H3VAE_TRT** | Compile H3 ONNX VAE encoder and decoder models into TensorRT engines for ComfyUI inference. | Requires engine compilation before use; a W4A16 AWQ decoder variant is available for lower-VRAM configurations. | [Code](https://github.com/lihaoyun6/ComfyUI-H3VAE_TRT) · [ONNX models](https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX) |
 
 <a id="ar-diffusion"></a>
 ### 3.7 Autoregressive Diffusion Acceleration
@@ -169,6 +177,16 @@ Chunked autoregressive generation reuses cross-chunk state to produce continuous
 | Work | Technical contribution | Scope / notes | Resources |
 | :--- | :--- | :--- | :--- |
 | **TaoMate-H3** | Few-step chunked autoregressive generation with cross-chunk memory reuse for continuous audio-video streaming. | Released T2VA path; do not infer release of FL2VA or Ref2VA from roadmap entries. | [Code / weights](https://github.com/TaoLiveAIGC/TaoMate-H3) |
+
+<a id="sampling"></a>
+### 3.8 Sampling, Solvers & Resolution Scheduling
+
+These methods modify numerical integration, timestep selection, or latent resolution during sampling rather than training a distilled model. Their latency and quality depend on the checkpoint, solver, schedule, and resolution transitions.
+
+| Work | Technical contribution | Scope / notes | Resources |
+| :--- | :--- | :--- | :--- |
+| **MiniMax-H3-RefDelta-Solver** | Checkpoint-specific sampler family with ER-SDE as the default backend and additional solver and scheduling options. | Targets the pruned Ref-Delta Fused rank-1024 checkpoint. Custom schedules remain experimental; no general few-step speedup is assumed. | [Code](https://github.com/xmarre/ComfyUI-MiniMax-H3-RefDelta-Solver) |
+| **MiniMax H3 SPEED** | Progressive-resolution sampling: denoise at lower spatial resolutions, then increase to full resolution along the sigma schedule. | Automatic or manual resolution stages. Shipped calibration is Euler-derived; other solvers can require additional model evaluations. | [Code](https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED) |
 
 <a id="benchmarks"></a>
 ## <img src="https://img.shields.io/badge/04-6366f1?style=flat-square" height="22" alt="" />&nbsp; Benchmark Resources
@@ -192,6 +210,7 @@ Author-run evaluation and reproduction instructions are also available in the li
 | [MiniMax-H3](https://github.com/MiniMax-AI/MiniMax-H3) | Original model architecture and deployment references. |
 | [MiniMax H3 Integrations](https://github.com/MiniMax-AI/awesome-minimax-h3-integration) | Collection of H3 checkpoints, tools, and integrations. |
 | [Awesome MiniMax H3 / AtlasCloudAI](https://github.com/AtlasCloudAI/awesome-minimax-h3) | Community models, workflows, and related resources. |
+| [Awesome MiniMax-H3 / wildminder](https://github.com/wildminder/awesome-minimax-H3) | Community-maintained collection of MiniMax-H3 resources. |
 | [Awesome Efficient Diffusion](https://github.com/AI-Efficiency/Awesome-Efficient-Diffusion) | General literature on efficient diffusion and flow-matching models. |
 | [Awesome Video Diffusion](https://github.com/showlab/Awesome-Video-Diffusion) | Broader video diffusion research. |
 
